@@ -82,7 +82,8 @@ def solve_chamber(a_ratio, area_c, r, P_c, rho_L, R_c, gamma, T_c, T_0, method, 
 
     # Calculate Constants
     Pr = c_p * mu / k # Prandtl number
-    G = (m_dot_f + m_dot_o) / area_c # propellant mass flux ----------- Should this be for just m_dot_f?
+    G = (m_dot_f + m_dot_o) / area_c # total propellant mass flux (fuel+ox combined), per Gontijo et al. 2021 (COB-2021-2105) Eq. (2):
+    # "G is the propellant mass flux" (not fuel-only) -- confirmed correct, matches Spalding's L* model.
     B = (H*m_o) / (Q*r) + c_pL*(T_g - T_s)/Q # Transfer number
     L = (chi_0*psi_0) / (3*tau_0**2) # Chemical loading
     S = (9*Pr) / (2*math.log(1+B)) # Droplet drag

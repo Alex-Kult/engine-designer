@@ -2,7 +2,7 @@
 import math
 import isentropic as isn
 import l_star as cmb
-import MOC_ref as moc
+import MOC_axisymmetric as moc
 
 sigma = 0.0236 # surface tension [N/m]
 nu_L = 1.402e-6 # kinematic viscosity [m^2/s]
@@ -70,12 +70,27 @@ m_dot_tot = thrust/v_e
 m_dot_o = m_dot_tot/(1 + of_ratio)*of_ratio # oxygen mass flow rate [kg/s]
 m_dot_f = m_dot_tot/(1 + of_ratio) # ethanol mass flow rate [kg/s]
 
-area_t = m_dot_tot/(P_c*math.sqrt(gamma/(R*T_c))*(2/(gamma + 1))**((gamma + 1)/(2*(gamma - 1)))) # area of throat [m^2]
+Rn_Rt_ratio = 0.382 # throat downstream radius of curvature / throat radius, based on Georgia Tech
+
+# --- THROAT DISCHARGE COEFFICIENT ---
+# A rounded throat (radius Rn below) doesn't pass mass flow at the full idealized
+# 1-D choked-flow rate -- the curved sonic line makes the throat slightly less
+# effective than the geometric area alone suggests. This uses the LEADING-ORDER
+# term of Hall's asymptotic transonic throat correction (Hall, I.M., "Transonic
+# Flow in Two-Dimensional and Axially-Symmetric Nozzles," Quarterly Journal of
+# Mechanics and Applied Mathematics 15(4), 1962), later refined numerically by
+# Kliegel & Levine ("Transonic Flow in Small Throat Radius of Curvature Nozzles,"
+# AIAA Journal 7(7), 1969).
+# CAUTION: only the leading (lowest-order) term of Hall's series is used here.
+
+Cd = 1 - (gamma + 1)/(192*Rn_Rt_ratio) # throat discharge coefficient (dimensionless, <= 1)
+
+area_t = (m_dot_tot/(P_c*math.sqrt(gamma/(R*T_c))*(2/(gamma + 1))**((gamma + 1)/(2*(gamma - 1))))) / Cd # area of throat [m^2], corrected for throat-curvature discharge coefficient
 area_e = area_t*area_ratio
 
 Rt = math.sqrt(area_t/math.pi)
 Re = math.sqrt(area_e/math.pi)
-Rn = 0.382*Rt # Based on Georgia Tech
+Rn = Rn_Rt_ratio*Rt
 
 # --- L* ---
 area_c = c_ratio * area_t # chamber area [m^2]
@@ -137,6 +152,7 @@ print(f"\tRc: {Rc*1000:.6} [mm]")
 
 print("\nNOZZLE PARAMETERS:")
 print(f"\tRn: {Rn*1000:.6} [mm]")
+print(f"\tThroat Cd: {Cd:.6} (leading-order Hall approximation -- see comment above area_t)")
 print(f"\tExit Mach: {mach_e:.6}")
 print(f"\tTn: {math.degrees(theta_max):.6} [deg]")
 print("\n\tIsentropic:")

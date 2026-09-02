@@ -1,6 +1,11 @@
 #Author: Alex Kult
 #Description: Create the geometry of a rocket nozzle using the method of characteristics
-#Date: 5-14-2025
+#Date: 9-2-2026
+#
+# This file is still the PLANAR (2-D slab) method of characteristics -- see
+# MOC_axisymmetric.py for the axisymmetric version, which is what an
+# axisymmetric (round) rocket nozzle actually needs. Kept here, fixed, as a
+# correct planar reference / fallback.
 
 import MOC_lib as moc
 import numpy as np
@@ -31,7 +36,8 @@ def moc_geometry(gamma, mach_e, throat_rad):
     initial_slope_lst = initial_theta_lst - moc.mach_angle(throat_mach) #Slopes of characteristics from throat
 
     #First negative characteristic line
-    k_minus_lst = initial_theta_lst + moc.prandtl_meyer(gamma, throat_mach)
+    nu_kick = moc.prandtl_meyer(gamma, throat_mach)
+    k_minus_lst = 2*initial_theta_lst + nu_kick   # FIX #1 (was: initial_theta_lst + nu_kick)
     k_plus_lst = -k_minus_lst
     nu_1 = k_minus_lst[0]
     nu_map[0,0] = nu_1
@@ -53,19 +59,19 @@ def moc_geometry(gamma, mach_e, throat_rad):
         #Finding Invariants
         k_minus = k_minus_lst[i+1]
         k_plus = k_plus_lst[0]
-        
+
         #Calculating point parameters
         nu = 0.5*(k_minus - k_plus)
         theta = 0.5*(k_minus + k_plus)
         mach = moc.invert_prandtl_meyer_angle(gamma, nu)
         mu = moc.mach_angle(mach)
-        
+
         #Updating arrays
         nu_map[0,i+1] = nu
         theta_map[0,i+1] = theta
         mach_map[0,i+1] = mach
         mu_map[0,i+1] = mu
-        
+
         #Calculate slope from reference points
         if mesh_type == "leading":
             m_1 = np.tan(initial_slope_lst[i+1])
@@ -75,19 +81,19 @@ def moc_geometry(gamma, mach_e, throat_rad):
             m_2 = np.tan(0.5*(theta_map[0,i] + mu_map[0,i] + theta + mu))
         else:
             raise ValueError("Please select a valid mesh type")
-        
+
         #Calculate new point location
         x = (y_wall_lst[0] - char_points[0,i,1] + m_2*char_points[0,i,0] - m_1*x_wall_lst[0]) / (m_2 - m_1)
         y = y_wall_lst[0] + m_1*(x - x_wall_lst[0])
-        
+
         #Update coordinate array
         char_points[0,i+1,0] = x
         char_points[0,i+1,1] = y
 
     #Calculating parameters of first wall point
     wall_ang_1 = initial_theta_lst[-1]
-    theta = theta_map[0,n-1]
-    nu = nu_map[0,n-1]
+    theta = wall_ang_1                                    # FIX #2 (was: theta_map[0,n-1], i.e. theta_max/2)
+    nu = nu_map[0,n-1] + (theta - theta_map[0,n-1])        # keep K- continuation consistent
     mach = moc.invert_prandtl_meyer_angle(gamma, nu)
     mu = moc.mach_angle(mach)
 
@@ -116,7 +122,7 @@ def moc_geometry(gamma, mach_e, throat_rad):
         #Finding Invariants
         k_minus = k_minus_lst[i+1]
         k_plus = k_plus_lst[i+1]
-        
+
         #Calculating centerline point parameters
         nu_1 = k_minus
         nu_map[i+1,0] = nu_1
@@ -133,28 +139,28 @@ def moc_geometry(gamma, mach_e, throat_rad):
         x_0 = char_points[i,1,0]
         y_0 = char_points[i,1,1]
         x_1 = y_0/(-m_1) + x_0
-        
+
         #Updating coordinate array
         char_points[i+1,0,0] = x_1
         char_points[i+1,0,1] = 0
-        
+
         #Calculating interior points on characteristic line
         for j in range(n - i - 2):
             #Updating left running invariant
             k_minus = k_minus_lst[i+j+2]
-            
+
             #Calculating point parameters
             nu = 0.5*(k_minus - k_plus)
             theta = 0.5*(k_minus + k_plus)
             mach = moc.invert_prandtl_meyer_angle(gamma, nu)
             mu = moc.mach_angle(mach)
-            
+
             #Updating arrays
             nu_map[i+1,j+1] = nu
             theta_map[i+1,j+1] = theta
             mach_map[i+1,j+1] = mach
             mu_map[i+1,j+1] = mu
-            
+
             #Calculating slope from reference points
             if mesh_type == "leading":
                 m_1 = np.tan(theta_map[i,j+2] - mu_map[i,j+2])
@@ -164,11 +170,11 @@ def moc_geometry(gamma, mach_e, throat_rad):
                 m_2 = np.tan(0.5*(theta_map[i+1,j] + mu_map[i+1,j] + theta + mu))
             else:
                 raise ValueError("Please select a valid mesh type")
-            
+
             #Calculating new point location
             x = (char_points[i,j+2,1] - char_points[i+1,j,1] + m_2*char_points[i+1,j,0] - m_1*char_points[i,j+2,0]) / (m_2 - m_1)
             y = char_points[i,j+2,1] + m_1*(x - char_points[i,j+2,0])
-            
+
             #Updating coordinate array
             char_points[i+1,j+1,0] = x
             char_points[i+1,j+1,1] = y
@@ -179,7 +185,7 @@ def moc_geometry(gamma, mach_e, throat_rad):
         nu = nu_map[i+1,n-i-2]
         mach = moc.invert_prandtl_meyer_angle(gamma, nu)
         mu = moc.mach_angle(mach)
-        
+
         #Updating arrays
         nu_map[i+1,n-i-1] = nu
         theta_map[i+1,n-i-1] = theta
@@ -204,31 +210,6 @@ def moc_geometry(gamma, mach_e, throat_rad):
         y_wall_lst.append(y)
         char_points[i+1,-i-2,0] = x
         char_points[i+1,-i-2,1] = y
-
-    #Plotting left running characteristics
-    for k in range(n):
-        x_points_l = [0]
-        y_points_l = [throat_rad]
-        for i in range(n):
-            for j in range(n+1):
-                if i + j == k:
-                    x = char_points[i,j,0]
-                    y = char_points[i,j,1]
-                    
-                    x_points_l.append(x)
-                    y_points_l.append(y)
-
-    #Plotting right running characteristics               
-    for i in range(n):
-        x_points_r = []
-        y_points_r = []
-        
-        for j in range(n+1):
-            if char_points[i,j,0] != -1:
-                x = char_points[i,j,0]
-                y = char_points[i,j,1]
-                x_points_r.append(x)
-                y_points_r.append(y)
 
     ##Output
     area_ratio = char_points[n-1,1,1]**2/throat_rad**2

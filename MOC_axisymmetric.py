@@ -346,16 +346,23 @@ def moc_geometry(gamma, mach_e, throat_rad, n=50, iters=6, planar=False,
     within that bracket (still warm-starting from the lower, converged end)
     to hone in on the theta_max that hits mach_e exactly.
 
-    Returns (theta_max, area_ratio, Re, Le), matching MOC_ref.moc_geometry's
-    signature. Default n=40 takes on the order of a minute for a strong
-    design point; see the "PRACTICAL NOTE ON RUNTIME" section up top before
-    raising it.
+    Returns (theta_max, area_ratio, Re, Le, x_wall, y_wall). The first four
+    match MOC_ref.moc_geometry's original signature; x_wall/y_wall are the
+    raw (unsmoothed) nozzle wall contour points, in the same units as
+    throat_rad, ordered from the throat (x=0) to the exit -- pass them to
+    export_wall_csv() below to write a cubic-spline-smoothed points file for
+    Fusion 360 import. Default n=40 takes on the order of a minute for a
+    strong design point; see the "PRACTICAL NOTE ON RUNTIME" section up top
+    before raising it.
     """
     theta_max_planar = 0.5 * moc.prandtl_meyer(gamma, mach_e)
 
     if planar:
         wall_pts, _ = _solve_mesh(gamma, theta_max_planar, throat_rad, n, delta=0, iters=iters, n_sub=n_sub)
-        return theta_max_planar, (wall_pts[-1]['y'] / throat_rad) ** 2, wall_pts[-1]['y'], wall_pts[-1]['x']
+        x_wall = np.array([p['x'] for p in wall_pts])
+        y_wall = np.array([p['y'] for p in wall_pts])
+        return (theta_max_planar, (wall_pts[-1]['y'] / throat_rad) ** 2, wall_pts[-1]['y'], wall_pts[-1]['x'],
+                x_wall, y_wall)
 
     def solve_step(theta_max_next, wall_pts, sweeps):
         return _solve_mesh(gamma, theta_max_next, throat_rad, n, delta=1, iters=iters, n_sub=n_sub,
@@ -425,4 +432,46 @@ def moc_geometry(gamma, mach_e, throat_rad, n=50, iters=6, planar=False,
     Re = wall_b[-1]['y']
     Le = wall_b[-1]['x']
     area_ratio = (Re / throat_rad) ** 2
-    return b, area_ratio, Re, Le
+    x_wall = np.array([p['x'] for p in wall_b])
+    y_wall = np.array([p['y'] for p in wall_b])
+    return b, area_ratio, Re, Le, x_wall, y_wall
+
+
+def export_wall_csv(x_wall, y_wall, filename="moc_nozzle_pts.csv", n_pts=100, m_to_cm=100.0):
+    """
+    Write the MOC nozzle wall contour to a CSV of (x, y, z) points in
+    centimeters, formatted for Fusion 360's Insert -> Spline -> Import Spline
+    CSV command. Mirrors the CSV export in the original MOC.py script,
+    generalized to this solver's SI (meters) units:
+
+      1. Fit a cubic spline through the raw wall points (x_wall, y_wall),
+         same as MOC.py's `CubicSpline(x_wall_lst, y_wall_lst)`.
+      2. Resample it at n_pts+1 evenly spaced x-locations from the throat
+         (x=0) to the exit -- this is what makes the imported Fusion spline
+         smooth instead of following the MOC mesh's uneven native point
+         spacing (MOC.py did the same resampling before writing its CSV).
+      3. Convert from meters (this solver's native units) to centimeters
+         (m_to_cm=100), matching MOC.py's inches -> cm (*2.54) conversion
+         for Fusion, and append a z=0 column.
+      4. Write with the same formatting MOC.py used: comma-delimited,
+         3 decimal places, no header.
+
+    Called automatically from engine_design.py after moc_geometry() so the
+    CSV is regenerated every time the design is run.
+    """
+    from scipy.interpolate import CubicSpline
+
+    x_wall = np.asarray(x_wall)
+    y_wall = np.asarray(y_wall)
+
+    f_interp = CubicSpline(x_wall, y_wall)
+    x_int = np.linspace(x_wall.min(), x_wall.max(), n_pts + 1)
+    y_int = f_interp(x_int)
+
+    x_pts = (x_int * m_to_cm).reshape(-1, 1)
+    y_pts = (y_int * m_to_cm).reshape(-1, 1)
+    z_pts = np.zeros((n_pts + 1, 1))
+
+    wall_pts_out = np.hstack((x_pts, y_pts, z_pts))
+    np.savetxt(filename, wall_pts_out, delimiter=",", fmt="%.3f", comments="")
+    return filename
